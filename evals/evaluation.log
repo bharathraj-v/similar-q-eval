@@ -1,0 +1,4 @@
+2025-08-18 18:49:43,968 - INFO - Both APIs are healthy and ready
+2025-08-18 18:49:43,978 - INFO - Loaded 5 questions from similar_question_data.json
+2025-08-18 18:49:43,979 - INFO - Processing 5 remaining questions (skipping 0 already processed)
+2025-08-18 18:51:35,651 - INFO - Evaluation completed! Results saved to evaluation_results.csv

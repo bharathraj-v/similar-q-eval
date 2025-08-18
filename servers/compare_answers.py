@@ -24,19 +24,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-solution_llm = None
-solution_agent = None
+comparison_llm = None
+comparison_agent = None
 config_data = None
 
 def load_config() -> Dict[str, Any]:
     try:
-        with open('configs/solution_builder_prompts.yaml', 'r', encoding='utf-8') as file:
+        with open('configs/comparitive_analysis_prompts.yaml', 'r', encoding='utf-8') as file:
             return yaml.safe_load(file)
     except FileNotFoundError:
-        logger.error("configs/solution_builder_prompts.yaml not found. Please ensure it exists.")
+        logger.error("configs/comparitive_analysis_prompts.yaml not found. Please ensure it exists.")
         raise
     except yaml.YAMLError as e:
-        logger.error(f"Error parsing solution_builder_prompts.yaml: {str(e)}")
+        logger.error(f"Error parsing comparitive_analysis_prompts.yaml: {str(e)}")
         raise
 
 def validate_environment():
@@ -51,28 +51,28 @@ class HealthResponse(BaseModel):
     timestamp: int = Field(..., description="Unix timestamp")
     version: str = "1.0.0"
 
-class SolutionRequest(BaseModel):
-    question: str = Field(
-        ...,
-        min_length=10,
-        max_length=5000,
-        description="The academic question to be solved."
-    )
+class AnalysisRequest(BaseModel):
+    question: str = Field(..., min_length=10, max_length=5000)
+    sim_answer_explanation: str = Field(..., min_length=10, max_length=10000)
+    sim_answer_final_answer: str = Field(..., min_length=1, max_length=1000)
+    no_sim_answer_explanation: str = Field(..., min_length=10, max_length=10000)
+    no_sim_answer_final_answer: str = Field(..., min_length=1, max_length=1000)
 
-    @field_validator('question')
+    @field_validator('*')
     @classmethod
     def validate_not_empty_after_strip(cls, v: str) -> str:
         if not v.strip():
-            raise ValueError('Question field cannot be empty or contain only whitespace')
+            raise ValueError('Field cannot be empty or contain only whitespace')
         return v.strip()
 
-class SolutionModel(BaseModel):
-    explanation: str
-    final_answer: str
+class ComparitiveAnalysis(BaseModel):
+    sim_answer_score: int = Field(..., ge=0, le=100)
+    no_sim_answer_score: int = Field(..., ge=0, le=100)
+    notes: str
 
-class SolutionResponse(BaseModel):
+class AnalysisResponse(BaseModel):
     success: bool = True
-    data: SolutionModel
+    data: ComparitiveAnalysis
     processing_time_ms: int = Field(..., description="Processing time in milliseconds")
     request_id: Optional[str] = None
 
@@ -83,16 +83,11 @@ class ErrorResponse(BaseModel):
     request_id: Optional[str] = None
 
 def initialize_llm():
-    global solution_llm
+    global comparison_llm
     try:
         api_key = validate_environment()
-        config = types.GenerateContentConfig(
-            max_output_tokens=8192,
-            thinking_config=types.ThinkingConfig(
-            thinking_budget=-1
-        ),
-        )
-        solution_llm = GoogleGenAI(
+        config = types.GenerateContentConfig(max_output_tokens=8192)
+        comparison_llm = GoogleGenAI(
             model="gemini-2.5-flash",
             api_key=api_key,
             generation_config=config,
@@ -104,17 +99,17 @@ def initialize_llm():
         raise
 
 def initialize_agent():
-    global solution_agent
-    if solution_llm is None:
+    global comparison_agent
+    if comparison_llm is None:
         raise RuntimeError("LLM must be initialized before the agent.")
     try:
-        agent_config = config_data['agent']['solution_builder']
-        solution_agent = FunctionAgent(
-            name="SolutionAgent",
-            description="Builds thorough solutions for academic problems.",
+        agent_config = config_data['agent']['comparitive_analyzer']
+        comparison_agent = FunctionAgent(
+            name="ComparitiveAnalysisAgent",
+            description="It evaluates the comparitive analysis of the given question",
             system_prompt=agent_config['system_prompt'],
-            llm=solution_llm,
-            output_cls=SolutionModel,
+            llm=comparison_llm,
+            output_cls=ComparitiveAnalysis,
             timeout=120,
             tools=[]
         )
@@ -127,7 +122,7 @@ def initialize_agent():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global config_data
-    logger.info("Starting up Solution Builder API")
+    logger.info("Starting up Comparative Analysis API")
     try:
         config_data = load_config()
         initialize_llm()
@@ -139,7 +134,7 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    logger.info("Shutting down Solution Builder API")
+    logger.info("Shutting down Comparative Analysis API")
 
 def create_app():
     temp_config = load_config()
@@ -198,36 +193,42 @@ async def health_check():
 @app.get("/", tags=["Root"])
 async def root():
     return {
-        "message": config_data['api']['title'] if config_data else "Solution Builder API",
-        "version": config_data['api']['version'] if config_data else "1.0.0",
+        "message": config_data['api']['title'],
+        "version": config_data['api']['version'],
         "docs": "/docs"
     }
 
-@app.post("/solve", response_model=SolutionResponse, tags=["Solution"])
-async def get_solution(request_data: SolutionRequest, request: Request):
+@app.post("/analyse", response_model=AnalysisResponse, tags=["Analysis"])
+async def get_analysis(request_data: AnalysisRequest, request: Request):
     start_time = time.time()
     request_id = getattr(request.state, 'request_id', 'unknown')
     
     try:
-        logger.info(config_data['messages']['solution']['start'].format(request_id=request_id))
+        logger.info(config_data['messages']['analysis']['start'].format(request_id=request_id))
         
-        if solution_agent is None:
+        if comparison_agent is None:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=config_data['messages']['errors']['service_unavailable']
             )
         
-        template = config_data['agent']['solution_builder']['user_message_template']
-        user_msg = template.format(question=request_data.question)
+        template = config_data['agent']['comparitive_analyzer']['user_message_template']
+        user_msg = template.format(
+            question=request_data.question,
+            sim_answer_explanation=request_data.sim_answer_explanation,
+            sim_answer_final_answer=request_data.sim_answer_final_answer,
+            no_sim_answer_explanation=request_data.no_sim_answer_explanation,
+            no_sim_answer_final_answer=request_data.no_sim_answer_final_answer
+        )
         
-        agent_output = await solution_agent.run(user_msg=user_msg)
+        agent_output = await comparison_agent.run(user_msg=user_msg)
         
-        result = agent_output.get_pydantic_model(SolutionModel)
+        result = agent_output.get_pydantic_model(ComparitiveAnalysis)
         
         processing_time = int((time.time() - start_time) * 1000)
-        logger.info(config_data['messages']['solution']['success'].format(request_id=request_id, processing_time=processing_time))
+        logger.info(config_data['messages']['analysis']['success'].format(request_id=request_id, processing_time=processing_time))
         
-        return SolutionResponse(
+        return AnalysisResponse(
             data=result,
             processing_time_ms=processing_time,
             request_id=request_id
@@ -241,7 +242,7 @@ async def get_solution(request_data: SolutionRequest, request: Request):
             detail=error_msg
         )
     except Exception as e:
-        error_msg = config_data['messages']['solution']['failure'].format(error=str(e))
+        error_msg = config_data['messages']['analysis']['failure'].format(error=str(e))
         logger.error(f"Request {request_id}: {error_msg}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -251,10 +252,10 @@ async def get_solution(request_data: SolutionRequest, request: Request):
 if __name__ == "__main__":
     server_config = {
         "host": os.getenv("HOST", "0.0.0.0"),
-        "port": int(os.getenv("PORT", 8000)),
+        "port": int(os.getenv("PORT", 8003)),
         "reload": os.getenv("ENVIRONMENT", "development") == "development",
         "log_level": os.getenv("LOG_LEVEL", "info").lower(),
     }
     
     logger.info(f"Starting Uvicorn server with config: {server_config}")
-    uvicorn.run("solution_builder:app", **server_config)
+    uvicorn.run("compare_answers:app", **server_config)
