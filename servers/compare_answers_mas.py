@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-Production-ready FastAPI server for Similar Questions Evaluation with a Multi-Agent System
+Production-ready FastAPI server for Comparative Analysis with a Multi-Agent System
 """
 
 import os
 import logging
 import time
 import yaml
+import json
 from contextlib import asynccontextmanager
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
+from difflib import SequenceMatcher
 
 import uvicorn
 from dotenv import load_dotenv
@@ -34,15 +36,15 @@ orchestrator = None
 config_data = None
 
 def load_config() -> Dict[str, Any]:
-    """Load configuration from prompts.yaml"""
+    """Load configuration from comparitive_analysis_prompts_mas.yaml"""
     try:
-        with open('configs/evaluation_prompts_mas.yaml', 'r', encoding='utf-8') as file:
+        with open('configs/comparitive_analysis_prompts_mas.yaml', 'r', encoding='utf-8') as file:
             return yaml.safe_load(file)
     except FileNotFoundError:
-        logger.error("configs/evaluation_prompts_mas.yaml file not found. Please ensure it exists in the current directory.")
+        logger.error("configs/comparitive_analysis_prompts_mas.yaml file not found. Please ensure it exists in the current directory.")
         raise
     except yaml.YAMLError as e:
-        logger.error(f"Error parsing configs/evaluation_prompts_mas.yaml: {str(e)}")
+        logger.error(f"Error parsing configs/comparitive_analysis_prompts_mas.yaml: {str(e)}")
         raise
 
 class HealthResponse(BaseModel):
@@ -51,65 +53,50 @@ class HealthResponse(BaseModel):
     timestamp: int = Field(..., description="Unix timestamp")
     version: str = "1.0.0"
 
-class EvaluationRequest(BaseModel):
-    """Request model for question evaluation"""
-    question_text: str = Field(
+class ComparisonRequest(BaseModel):
+    """Request model for comparative analysis"""
+    question: str = Field(
         ..., 
-        min_length=10, 
+        min_length=5, 
         max_length=5000,
-        description="The original question text to evaluate"
-    )
-    similar_question: str = Field(
-        ..., 
-        min_length=10, 
-        max_length=5000,
-        description="The similar question text for comparison"
-    )
-    summarized_solution_approach: str = Field(
-        ..., 
-        min_length=10, 
-        max_length=10000,
-        description="The solution approach for the similar question"
+        description="The question to solve and compare answers for"
     )
     
-    @field_validator('question_text', 'similar_question', 'summarized_solution_approach')
+    @field_validator('question')
     @classmethod
     def validate_not_empty_after_strip(cls, v: str) -> str:
-        """Ensure fields are not empty after stripping whitespace"""
+        """Ensure field is not empty after stripping whitespace"""
         if not v.strip():
-            raise ValueError('Field cannot be empty or contain only whitespace')
+            raise ValueError('Question cannot be empty or contain only whitespace')
         return v.strip()
 
-class ConceptualSimilarity(BaseModel):
-    conceptual_similarity: int = Field(..., ge=0, le=100)
-    conceptual_similarity_note: str
+class SolutionModel(BaseModel):
+    explanation: str
+    final_answer: str
 
-class StructuralSimilarity(BaseModel):
-    structural_similarity: int = Field(..., ge=0, le=100)
-    structural_similarity_note: str
-    
-class DifficultyAlignment(BaseModel):
-    difficulty_alignment: int = Field(..., ge=0, le=100)
-    difficulty_alignment_note: str
+class SimilarQuestion(BaseModel):
+    similar_question_text: str
+    similarity_score: float
+    summarized_solution_approach: str
 
-class ApproachTransferability(BaseModel):
-    approach_transferability: int = Field(..., ge=0, le=100)
-    approach_transferability_note: str
-
-class SimilarQuestionsEvaluation(BaseModel):
-    similar_question: str
-    solution_approach: str
-    conceptual_similarity_score: int = Field(..., ge=0, le=100)
-    structural_similarity_score: int = Field(..., ge=0, le=100)
-    difficulty_alignment_score: int = Field(..., ge=0, le=100)
-    solution_approach_transferability_score: int = Field(..., ge=0, le=100)
-    total_score: int = Field(..., ge=0, le=100)
+class ComparitiveAnalysis(BaseModel):
+    sim_answer_score: int
+    no_sim_answer_score: int
     notes: str
 
-class EvaluationResponse(BaseModel):
-    """Response model for question evaluation"""
+class AgenticComparitiveAnalysis(BaseModel):
+    sim_explanation: str
+    sim_final_answer: str
+    no_sim_explanation: str
+    no_sim_final_answer: str
+    sim_answer_score: int
+    no_sim_answer_score: int
+    notes: str
+
+class ComparisonResponse(BaseModel):
+    """Response model for comparative analysis"""
     success: bool = True
-    data: SimilarQuestionsEvaluation
+    data: AgenticComparitiveAnalysis
     processing_time_ms: int = Field(..., description="Processing time in milliseconds")
     request_id: Optional[str] = None
 
@@ -137,7 +124,7 @@ def initialize_llms():
         
         config = types.GenerateContentConfig(
             max_output_tokens=8192,
-            thinking_config=types.ThinkingConfig(thinking_budget=0)  
+            thinking_config=types.ThinkingConfig(thinking_budget=-1)  
         )
         
         sub_agent_llm = GoogleGenAI(
@@ -160,7 +147,7 @@ def initialize_llms():
         raise
 
 def initialize_agents():
-    """Initialize all evaluation agents"""
+    """Initialize all solution and comparison agents"""
     global orchestrator
     
     if sub_agent_llm is None or orchestrator_llm is None:
@@ -169,88 +156,107 @@ def initialize_agents():
     try:
         agents_config = config_data['agents']
         
-        conceptual_similarity_agent = FunctionAgent(
-            system_prompt=agents_config['conceptual_similarity']['system_prompt'],
+        # Initialize solution agents
+        no_sim_solution_agent = FunctionAgent(
+            name="NoSimSolutionAgent",
+            description="Builds thorough solutions without using similar questions",
+            system_prompt=agents_config['no_sim_solution']['system_prompt'],
             llm=sub_agent_llm,
-            tools=[],
-            output_cls=ConceptualSimilarity,
+            output_cls=SolutionModel,
+            timeout=120,
+            tools=[]
         )
 
-        structural_similarity_agent = FunctionAgent(
-            system_prompt=agents_config['structural_similarity']['system_prompt'],
+        async def get_similar_questions(question: str) -> List[SimilarQuestion]:
+            """Get most similar question from dataset and return its similar questions"""
+            try:
+                with open('similar_question_data.json') as f:
+                    data = json.load(f)
+
+                best_match = max(
+                    data,
+                    key=lambda q: SequenceMatcher(None, q['question_text'], question).ratio()
+                )
+
+                return [SimilarQuestion(**sq) for sq in best_match.get('similar_questions', [])]
+            except FileNotFoundError:
+                logger.warning("similar_question_data.json not found, returning empty list")
+                return []
+            except Exception as e:
+                logger.error(f"Error loading similar questions: {str(e)}")
+                return []
+
+        sim_solution_agent = FunctionAgent(
+            name="SimSolutionAgent", 
+            description="Builds thorough solutions using similar questions",
+            system_prompt=agents_config['sim_solution']['system_prompt'],
             llm=sub_agent_llm,
-            tools=[],
-            output_cls=StructuralSimilarity,
+            output_cls=SolutionModel,
+            timeout=120,
+            tools=[get_similar_questions]
         )
 
-        difficulty_alignment_agent = FunctionAgent(
-            system_prompt=agents_config['difficulty_alignment']['system_prompt'],
+        comparison_agent = FunctionAgent(
+            name="ComparitiveAnalysisAgent",
+            description="Evaluates the comparative analysis of solutions",
+            system_prompt=agents_config['comparison']['system_prompt'],
             llm=sub_agent_llm,
-            tools=[],
-            output_cls=DifficultyAlignment,
+            output_cls=ComparitiveAnalysis,
+            timeout=120,
+            tools=[]
         )
 
-        approach_transferability_agent = FunctionAgent(
-            system_prompt=agents_config['approach_transferability']['system_prompt'],
-            llm=sub_agent_llm,
-            tools=[],
-            output_cls=ApproachTransferability,
-        )
+        async def solve_without_similar_questions(question: str) -> str:
+            """
+            Generates a solution for the given question using the standard solution builder agent.
+            This agent does not use similar questions for context.
+            Returns a solution object as a string.
+            """
+            result = await no_sim_solution_agent.run(user_msg=question)
+            return str(result.structured_response)
 
-        async def evaluate_conceptual_similarity(original_question: str, similar_question: str, solution_approach: str) -> str:
-            """Evaluate conceptual similarity between questions"""
-            template = agents_config['conceptual_similarity']['user_message_template']
-            user_msg = template.format(
-                original_question=original_question,
-                similar_question=similar_question,
-                solution_approach=solution_approach
-            )
-            result = await conceptual_similarity_agent.run(user_msg=user_msg)
-            return str(result.structured_resposne)
+        async def solve_with_similar_questions(question: str) -> str:
+            """
+            Generates a solution for the given question using the agent that can fetch
+            and analyze similar questions via its tools.
+            Returns a solution object as a string.
+            """
+            result = await sim_solution_agent.run(user_msg=question)
+            return str(result.structured_response)
 
-        async def evaluate_structural_similarity(original_question: str, similar_question: str, solution_approach: str) -> str:
-            """Evaluate structural similarity between questions"""
-            template = agents_config['structural_similarity']['user_message_template']
+        async def evaluate_and_compare_solutions(
+            question: str,
+            sim_solution_explanation: str,
+            sim_solution_final_answer: str,
+            no_sim_solution_explanation: str,
+            no_sim_solution_final_answer: str,
+        ) -> str:
+            """
+            Compares and evaluates two different solutions for the same question.
+            It takes the original question and the individual components (explanation and final answer)
+            for both the 'similar question' and 'no similar question' based solutions.
+            Returns a comparative analysis object as a string.
+            """
+            template = agents_config['comparison']['user_message_template']
             user_msg = template.format(
-                original_question=original_question,
-                similar_question=similar_question,
-                solution_approach=solution_approach
+                question=question,
+                sim_answer_explanation=sim_solution_explanation,
+                sim_answer_final_answer=sim_solution_final_answer,
+                no_sim_answer_explanation=no_sim_solution_explanation,
+                no_sim_answer_final_answer=no_sim_solution_final_answer
             )
-            result = await structural_similarity_agent.run(user_msg=user_msg)
-            return str(result.structured_resposne)
-
-        async def evaluate_difficulty_alignment(original_question: str, similar_question: str, solution_approach: str) -> str:
-            """Evaluate difficulty alignment between questions"""
-            template = agents_config['difficulty_alignment']['user_message_template']
-            user_msg = template.format(
-                original_question=original_question,
-                similar_question=similar_question,
-                solution_approach=solution_approach
-            )
-            result = await difficulty_alignment_agent.run(user_msg=user_msg)
-            return str(result.structured_resposne)
-
-        async def evaluate_approach_transferability(original_question: str, similar_question: str, solution_approach: str) -> str:
-            """Evaluate approach transferability between questions"""
-            template = agents_config['approach_transferability']['user_message_template']
-            user_msg = template.format(
-                original_question=original_question,
-                similar_question=similar_question,
-                solution_approach=solution_approach
-            )
-            result = await approach_transferability_agent.run(user_msg=user_msg)
-            return str(result.structured_resposne)
+            result = await comparison_agent.run(user_msg=user_msg)
+            return str(result.structured_response)
 
         orchestrator = FunctionAgent(
             system_prompt=agents_config['orchestrator']['system_prompt'],
             llm=orchestrator_llm,
             tools=[
-                evaluate_conceptual_similarity,
-                evaluate_structural_similarity,
-                evaluate_difficulty_alignment,
-                evaluate_approach_transferability
+                solve_without_similar_questions,
+                solve_with_similar_questions,
+                evaluate_and_compare_solutions,
             ],
-            output_cls=SimilarQuestionsEvaluation,
+            output_cls=AgenticComparitiveAnalysis,
         )
         
         logger.info(config_data['messages']['startup']['agents_init'])
@@ -265,7 +271,7 @@ async def lifespan(app: FastAPI):
     """Manage application lifespan"""
     # Startup
     global config_data
-    logger.info("Starting up Evaluation API")
+    logger.info("Starting up Comparative Analysis API")
     try:
         config_data = load_config()
         initialize_llms()
@@ -278,7 +284,7 @@ async def lifespan(app: FastAPI):
     yield
     
     # Shutdown
-    logger.info("Shutting down Evaluation API")
+    logger.info("Shutting down Comparative Analysis API")
 
 def create_app():
     """Create FastAPI app with configuration from YAML"""
@@ -349,15 +355,15 @@ async def health_check():
 async def root():
     """Root endpoint"""
     return {
-        "message": config_data['api']['title'] if config_data else "Similar Questions Evaluation API",
+        "message": config_data['api']['title'] if config_data else "Comparative Analysis API",
         "version": config_data['api']['version'] if config_data else "1.0.0",
         "docs": "/docs",
         "health": "/health"
     }
 
 @app.get("/config", tags=["Configuration"])
-async def get_evaluation_config():
-    """Get evaluation configuration and descriptions"""
+async def get_comparison_config():
+    """Get comparison configuration and descriptions"""
     if not config_data:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -365,20 +371,20 @@ async def get_evaluation_config():
         )
     
     return {
-        "evaluation_config": config_data['evaluation_config'],
-        "descriptions": config_data['evaluation_config']['descriptions']
+        "comparison_config": config_data['comparison_config'],
+        "descriptions": config_data['comparison_config']['descriptions']
     }
 
-@app.post("/evaluate", response_model=EvaluationResponse, tags=["Evaluation"])
-async def evaluate_questions(request_data: EvaluationRequest, request: Request):
+@app.post("/compare", response_model=ComparisonResponse, tags=["Comparison"])
+async def compare_answers(request_data: ComparisonRequest, request: Request):
     """
-    Evaluate the similarity and transferability between an original question and a similar question
+    Compare answers generated with and without similar questions for a given question
     """
     start_time = time.time()
     request_id = getattr(request.state, 'request_id', 'unknown')
     
     try:
-        logger.info(config_data['messages']['evaluation']['start'].format(request_id=request_id))
+        logger.info(config_data['messages']['comparison']['start'].format(request_id=request_id))
         
         if orchestrator is None:
             error_msg = config_data['messages']['errors']['service_unavailable']
@@ -387,35 +393,27 @@ async def evaluate_questions(request_data: EvaluationRequest, request: Request):
                 detail=error_msg
             )
         
-        template = config_data['agents']['orchestrator']['user_message_template']
-        user_msg = template.format(
-            original_question=request_data.question_text,
-            similar_question=request_data.similar_question,
-            solution_approach=request_data.summarized_solution_approach
-        )
-        
-        logger.info(f"Request {request_id}: Running orchestrator evaluation")
-        agent_output = await orchestrator.run(user_msg=user_msg)
+        logger.info(f"Request {request_id}: Running orchestrator comparison for question: {request_data.question[:50]}...")
+        orchestrator_response = await orchestrator.run(request_data.question)
         
         result = None
         
- 
-        if hasattr(agent_output, 'get_pydantic_model'):
+        if hasattr(orchestrator_response, 'get_pydantic_model'):
             try:
-                result = agent_output.get_pydantic_model(SimilarQuestionsEvaluation)
+                result = orchestrator_response.get_pydantic_model(AgenticComparitiveAnalysis)
             except:
-                result = agent_output.get_pydantic_model()
-        elif hasattr(agent_output, 'structured_response'):
-            result_dict = agent_output.structured_response
-            result = SimilarQuestionsEvaluation(**result_dict)
+                result = orchestrator_response.get_pydantic_model()
+        elif hasattr(orchestrator_response, 'structured_response'):
+            result_dict = orchestrator_response.structured_response
+            result = AgenticComparitiveAnalysis(**result_dict)
         else:
-            raise ValueError(f"Unexpected agent output type: {type(result)}")
+            raise ValueError(f"Unexpected orchestrator output type: {type(orchestrator_response)}")
         
         processing_time = int((time.time() - start_time) * 1000)
         
-        logger.info(f"Request {request_id}: Evaluation completed in {processing_time}ms")
+        logger.info(f"Request {request_id}: Comparison completed in {processing_time}ms")
         
-        return EvaluationResponse(
+        return ComparisonResponse(
             data=result,
             processing_time_ms=processing_time,
             request_id=request_id
@@ -429,7 +427,7 @@ async def evaluate_questions(request_data: EvaluationRequest, request: Request):
             detail=error_msg
         )
     except Exception as e:
-        error_msg = config_data['messages']['evaluation']['failure'].format(error=str(e))
+        error_msg = config_data['messages']['comparison']['failure'].format(error=str(e))
         logger.error(f"Request {request_id}: {error_msg}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -439,11 +437,11 @@ async def evaluate_questions(request_data: EvaluationRequest, request: Request):
 if __name__ == "__main__":
     server_config = {
         "host": os.getenv("HOST", "0.0.0.0"),
-        "port": int(os.getenv("PORT", 8000)),
+        "port": int(os.getenv("PORT", 8001)),
         "reload": os.getenv("ENVIRONMENT", "development") == "development",
         "log_level": os.getenv("LOG_LEVEL", "info").lower(),
         "workers": int(os.getenv("WORKERS", 1)) if os.getenv("ENVIRONMENT") == "production" else 1,
     }
     
     logger.info(f"Starting server with config: {server_config}")
-    uvicorn.run("evaluate_similar_question_mas:app", **server_config)
+    uvicorn.run("compare_answers_mas:app", **server_config)
