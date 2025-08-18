@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Production-ready FastAPI server for Similar Questions Evaluation with a Single Agent System
+Production-ready FastAPI server for Similar Questions Evaluation with a Multi-Agent System
 """
 
 import os
@@ -28,20 +28,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-evaluator_llm = None
-evaluator_agent = None
+sub_agent_llm = None
+orchestrator_llm = None
+orchestrator = None
 config_data = None
 
 def load_config() -> Dict[str, Any]:
     """Load configuration from prompts.yaml"""
     try:
-        with open('configs/evaluation_prompts_s.yaml', 'r', encoding='utf-8') as file:
+        with open('configs/evaluation_prompts_mas.yaml', 'r', encoding='utf-8') as file:
             return yaml.safe_load(file)
     except FileNotFoundError:
-        logger.error("configs/evaluation_prompts_s.yaml file not found. Please ensure it exists in the current directory.")
+        logger.error("configs/evaluation_prompts_mas.yaml file not found. Please ensure it exists in the current directory.")
         raise
     except yaml.YAMLError as e:
-        logger.error(f"Error parsing configs/evaluation_prompts_s.yaml: {str(e)}")
+        logger.error(f"Error parsing configs/evaluation_prompts_mas.yaml: {str(e)}")
         raise
 
 class HealthResponse(BaseModel):
@@ -79,6 +80,22 @@ class EvaluationRequest(BaseModel):
             raise ValueError('Field cannot be empty or contain only whitespace')
         return v.strip()
 
+class ConceptualSimilarity(BaseModel):
+    conceptual_similarity: int = Field(..., ge=0, le=100)
+    conceptual_similarity_note: str
+
+class StructuralSimilarity(BaseModel):
+    structural_similarity: int = Field(..., ge=0, le=100)
+    structural_similarity_note: str
+    
+class DifficultyAlignment(BaseModel):
+    difficulty_alignment: int = Field(..., ge=0, le=100)
+    difficulty_alignment_note: str
+
+class ApproachTransferability(BaseModel):
+    approach_transferability: int = Field(..., ge=0, le=100)
+    approach_transferability_note: str
+
 class SimilarQuestionsEvaluation(BaseModel):
     similar_question: str
     solution_approach: str
@@ -111,9 +128,9 @@ def validate_environment():
         raise ValueError(error_msg)
     return api_key
 
-def initialize_llm():
-    """Initialize LLM instance"""
-    global evaluator_llm
+def initialize_llms():
+    """Initialize LLM instances"""
+    global sub_agent_llm, orchestrator_llm
     
     try:
         api_key = validate_environment()
@@ -123,8 +140,14 @@ def initialize_llm():
             thinking_config=types.ThinkingConfig(thinking_budget=0)  
         )
         
-        evaluator_llm = GoogleGenAI(
+        sub_agent_llm = GoogleGenAI(
             model="gemini-2.5-flash",
+            api_key=api_key,
+            generation_config=config,
+        )
+        
+        orchestrator_llm = GoogleGenAI(
+            model="gemini-2.5-flash", 
             api_key=api_key,
             generation_config=config,
         )
@@ -136,24 +159,101 @@ def initialize_llm():
         logger.error(error_msg)
         raise
 
-def initialize_agent():
-    """Initialize the single evaluation agent"""
-    global evaluator_agent
+def initialize_agents():
+    """Initialize all evaluation agents"""
+    global orchestrator
     
-    if evaluator_llm is None:
-        raise RuntimeError("LLM must be initialized before agent")
+    if sub_agent_llm is None or orchestrator_llm is None:
+        raise RuntimeError("LLMs must be initialized before agents")
     
     try:
-        agent_config = config_data['agent']['single_evaluator']
+        agents_config = config_data['agents']
         
-        evaluator_agent = FunctionAgent(
-            system_prompt=agent_config['system_prompt'],
-            llm=evaluator_llm,
+        conceptual_similarity_agent = FunctionAgent(
+            system_prompt=agents_config['conceptual_similarity']['system_prompt'],
+            llm=sub_agent_llm,
             tools=[],
+            output_cls=ConceptualSimilarity,
+        )
+
+        structural_similarity_agent = FunctionAgent(
+            system_prompt=agents_config['structural_similarity']['system_prompt'],
+            llm=sub_agent_llm,
+            tools=[],
+            output_cls=StructuralSimilarity,
+        )
+
+        difficulty_alignment_agent = FunctionAgent(
+            system_prompt=agents_config['difficulty_alignment']['system_prompt'],
+            llm=sub_agent_llm,
+            tools=[],
+            output_cls=DifficultyAlignment,
+        )
+
+        approach_transferability_agent = FunctionAgent(
+            system_prompt=agents_config['approach_transferability']['system_prompt'],
+            llm=sub_agent_llm,
+            tools=[],
+            output_cls=ApproachTransferability,
+        )
+
+        async def evaluate_conceptual_similarity(original_question: str, similar_question: str, solution_approach: str) -> str:
+            """Evaluate conceptual similarity between questions"""
+            template = agents_config['conceptual_similarity']['user_message_template']
+            user_msg = template.format(
+                original_question=original_question,
+                similar_question=similar_question,
+                solution_approach=solution_approach
+            )
+            result = await conceptual_similarity_agent.run(user_msg=user_msg)
+            return str(result)
+
+        async def evaluate_structural_similarity(original_question: str, similar_question: str, solution_approach: str) -> str:
+            """Evaluate structural similarity between questions"""
+            template = agents_config['structural_similarity']['user_message_template']
+            user_msg = template.format(
+                original_question=original_question,
+                similar_question=similar_question,
+                solution_approach=solution_approach
+            )
+            result = await structural_similarity_agent.run(user_msg=user_msg)
+            return str(result)
+
+        async def evaluate_difficulty_alignment(original_question: str, similar_question: str, solution_approach: str) -> str:
+            """Evaluate difficulty alignment between questions"""
+            template = agents_config['difficulty_alignment']['user_message_template']
+            user_msg = template.format(
+                original_question=original_question,
+                similar_question=similar_question,
+                solution_approach=solution_approach
+            )
+            result = await difficulty_alignment_agent.run(user_msg=user_msg)
+            return str(result)
+
+        async def evaluate_approach_transferability(original_question: str, similar_question: str, solution_approach: str) -> str:
+            """Evaluate approach transferability between questions"""
+            template = agents_config['approach_transferability']['user_message_template']
+            user_msg = template.format(
+                original_question=original_question,
+                similar_question=similar_question,
+                solution_approach=solution_approach
+            )
+            result = await approach_transferability_agent.run(user_msg=user_msg)
+            return str(result)
+
+        orchestrator = FunctionAgent(
+            system_prompt=agents_config['orchestrator']['system_prompt'],
+            llm=orchestrator_llm,
+            tools=[
+                evaluate_conceptual_similarity,
+                evaluate_structural_similarity,
+                evaluate_difficulty_alignment,
+                evaluate_approach_transferability
+            ],
             output_cls=SimilarQuestionsEvaluation,
         )
         
-        logger.info(config_data['messages']['startup']['agent_init'])
+        logger.info(config_data['messages']['startup']['agents_init'])
         
     except Exception as e:
         error_msg = config_data['messages']['startup']['failure'].format(error=str(e))
@@ -165,11 +265,11 @@ async def lifespan(app: FastAPI):
     """Manage application lifespan"""
     # Startup
     global config_data
-    logger.info("Starting up Evaluation API (Single Agent)")
+    logger.info("Starting up Evaluation API")
     try:
         config_data = load_config()
-        initialize_llm()
-        initialize_agent()
+        initialize_llms()
+        initialize_agents()
         logger.info(config_data['messages']['startup']['success'])
     except Exception as e:
         logger.error(f"Startup failed: {str(e)}")
@@ -178,7 +278,7 @@ async def lifespan(app: FastAPI):
     yield
     
     # Shutdown
-    logger.info("Shutting down Evaluation API (Single Agent)")
+    logger.info("Shutting down Evaluation API")
 
 def create_app():
     """Create FastAPI app with configuration from YAML"""
@@ -249,7 +349,7 @@ async def health_check():
 async def root():
     """Root endpoint"""
     return {
-        "message": config_data['api']['title'] if config_data else "Similar Questions Evaluation API (Single Agent)",
+        "message": config_data['api']['title'] if config_data else "Similar Questions Evaluation API",
         "version": config_data['api']['version'] if config_data else "1.0.0",
         "docs": "/docs",
         "health": "/health"
@@ -280,25 +380,26 @@ async def evaluate_questions(request_data: EvaluationRequest, request: Request):
     try:
         logger.info(config_data['messages']['evaluation']['start'].format(request_id=request_id))
         
-        if evaluator_agent is None:
+        if orchestrator is None:
             error_msg = config_data['messages']['errors']['service_unavailable']
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=error_msg
             )
         
-        template = config_data['agent']['single_evaluator']['user_message_template']
+        template = config_data['agents']['orchestrator']['user_message_template']
         user_msg = template.format(
             original_question=request_data.question_text,
             similar_question=request_data.similar_question,
             solution_approach=request_data.summarized_solution_approach
         )
         
-        logger.info(f"Request {request_id}: Running single agent evaluation")
-        agent_output = await evaluator_agent.run(user_msg=user_msg)
+        logger.info(f"Request {request_id}: Running orchestrator evaluation")
+        agent_output = await orchestrator.run(user_msg=user_msg)
         
         result = None
         
+ 
         if hasattr(agent_output, 'get_pydantic_model'):
             try:
                 result = agent_output.get_pydantic_model(SimilarQuestionsEvaluation)
@@ -308,7 +409,7 @@ async def evaluate_questions(request_data: EvaluationRequest, request: Request):
             result_dict = agent_output.structured_response
             result = SimilarQuestionsEvaluation(**result_dict)
         else:
-            raise ValueError(f"Unexpected agent output type: {type(agent_output)}")
+            raise ValueError(f"Unexpected agent output type: {type(result)}")
         
         processing_time = int((time.time() - start_time) * 1000)
         
@@ -345,4 +446,4 @@ if __name__ == "__main__":
     }
     
     logger.info(f"Starting server with config: {server_config}")
-    uvicorn.run("evaluate_similar_question:app", **server_config)
+    uvicorn.run("evaluate_similar_question_mas:app", **server_config)

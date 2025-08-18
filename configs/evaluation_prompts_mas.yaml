@@ -98,7 +98,7 @@ agents:
       structural_similarity_score: The structural similarity score  
       difficulty_alignment_score: The difficulty alignment score
       solution_approach_transferability_score: The solution approach transferability score
-      total_score: The total average score (sum of all individual scores)
+      total_score: The total average score out of 100 which is average of all above scores
       notes: A short note explaining the complete evaluation of the relevance of the similar question
 
     user_message_template: |
@@ -117,7 +117,7 @@ evaluation_config:
   scoring:
     min_score: 0
     max_score: 100
-    total_max_score: 400 
+    total_max_score: 100 
   
   validation:
     min_text_length: 10

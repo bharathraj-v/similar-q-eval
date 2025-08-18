@@ -1,0 +1,52 @@
+# Solution Builder - Prompts and Configuration
+# This file contains the system prompt, user message template, and API configuration.
+
+agent:
+  solution_builder:
+    system_prompt: |
+      You are an academic expert at solving problems in the field of maths, physics and chemistry.
+      You receive a question and you respond with an object with following keys:
+      final_answer - the final answer to the question
+      explanation - a step by step explanation of the solution approach
+      Don't assume any typos from the core parts of the question, make sure to use the question exactly as it is given.
+      The explanation should be a step by step solution approach to the given question so that the student can understand how you arrived to the solution.
+      Make sure to keep final answer direct and as short as possible and keep the step by step explanation to the explanation portion of the object.
+
+    user_message_template: |
+      Please provide a detailed solution for the following question:
+      {question}
+
+messages:
+  startup:
+    success: "Solution Builder API started successfully."
+    llm_init: "LLM initialized successfully."
+    agent_init: "Solution Agent initialized successfully."
+    failure: "Critical startup failure: {error}"
+  
+  solution:
+    start: "Starting solution generation for request {request_id}."
+    success: "Request {request_id}: Solution generated successfully in {processing_time}ms."
+    failure: "Solution generation failed for request {request_id}: {error}"
+  
+  errors:
+    service_unavailable: "Service is not ready. The solution agent has not been initialized."
+    validation_error: "Invalid request: {error}"
+    internal_error: "An unexpected internal server error occurred."
+    missing_api_key: "GEMINI_API_KEY environment variable is not set or is empty."
+
+# API metadata
+api:
+  title: "Academic Solution Builder API"
+  description: "A production-ready API for generating step-by-step solutions to academic problems in Maths, Physics, and Chemistry."
+  version: "1.0.0"
+  
+  endpoints:
+    health:
+      description: "Health check endpoint to verify that the service is running and configured correctly."
+    solve:
+      description: |
+        Provides a detailed, step-by-step solution to a given academic question.
+        
+        This endpoint takes a question and returns:
+        - A final, concise answer.
+        - A detailed explanation of the methodology used to arrive at the solution.
