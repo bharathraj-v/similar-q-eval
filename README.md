@@ -4,7 +4,7 @@ This repository contains APIs, evaluation scripts and evaluation results for the
 - Evaluation of the relevance of similar questions 
 - Solution Builder for solving academic problems with param to substantiate answer with it's similar questions
 - Evaluation scripts to test the Similar questions Evaluation API and Solution Builder API with the test dataset
-- Solution comparision and evaluation
+- Solution Builders comparision and evaluation - LLM-as-a-Judge
 
 
 # Repository Index
@@ -80,7 +80,7 @@ This repository contains APIs, evaluation scripts and evaluation results for the
 
 ## Installation and usage
 
-Installation:
+**Installation:**
 
 ```
 git clone https://github.com/bharathraj-v/similar-q-eval
@@ -88,7 +88,7 @@ cd similar-q-eval
 pip install -r requirements.txt
 ```
 
-Usage:
+**Usage:**
 
 1. Solution Builder API (integrated)
 
@@ -192,7 +192,7 @@ python scripts/evaluate_solution_builders.py
 | Similarity vs. Solution Builder (no sim) | **0.03** |
 | Similarity vs. Solution Builder (with sim) | **0.05** |
 
-Findings:
+**Findings:**
 
 - The similarity evaluation scores are not correlated with the solution builder scores, meaning the solution builder with similar questions is able to ignore the irrelevant similar questions
 
