@@ -120,7 +120,6 @@ print(f"Agent used: {response1.json()['agent_used']}")
 print(f"Answer: {response1.json()['data']['final_answer']}")
 print()
 
-# 2. Similar questions agent
 response2 = requests.post(
     f"{BASE_URL}/solve", 
     json={
