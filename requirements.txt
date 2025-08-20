@@ -6,4 +6,5 @@ uvicorn
 fastapi
 pandas
 tqdm
-
+matplotlib
+seaborn

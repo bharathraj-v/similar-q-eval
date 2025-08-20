@@ -1,0 +1,61 @@
+2025-08-19 12:19:04,025 - INFO - Evaluation API is healthy and ready
+2025-08-19 12:19:09,251 - INFO - Evaluation endpoint test successful
+2025-08-19 12:19:09,259 - INFO - Loaded 5 questions from similar_question_data.json
+2025-08-19 12:19:09,259 - INFO - Found 5 valid questions
+2025-08-19 12:19:09,259 - INFO - Generated 10 question-similar_question pairs to evaluate
+2025-08-19 12:19:09,259 - INFO - Skipping 0 already processed pairs
+2025-08-19 12:19:13,996 - INFO - Evaluation interrupted by user. Progress has been saved.
+2025-08-19 12:22:32,929 - INFO - Evaluation API is healthy and ready
+2025-08-19 12:22:38,133 - INFO - Evaluation endpoint test successful
+2025-08-19 12:22:38,140 - INFO - Loaded 553 questions from similar_question_data.json
+2025-08-19 12:22:38,141 - INFO - Found 553 valid questions
+2025-08-19 12:22:38,141 - INFO - Generated 1038 question-similar_question pairs to evaluate
+2025-08-19 12:22:38,141 - INFO - Skipping 0 already processed pairs
+2025-08-19 12:23:08,301 - WARNING - Text truncated due to length
+2025-08-19 12:23:11,527 - WARNING - Text truncated due to length
+2025-08-19 12:23:46,855 - WARNING - Text truncated due to length
+2025-08-19 12:23:57,137 - WARNING - Text truncated due to length
+2025-08-19 12:24:03,370 - WARNING - Text truncated due to length
+2025-08-19 12:24:37,035 - WARNING - Text truncated due to length
+2025-08-19 12:24:48,421 - WARNING - Text truncated due to length
+2025-08-19 12:24:50,522 - WARNING - Text truncated due to length
+2025-08-19 12:25:03,323 - ERROR - Evaluation failed for 3a98f: Validation error (400): Validation error: 1 validation error for EvaluationResponse
+data
+  Input should be a valid dictionary or instance of SimilarQuestionsEvaluation [type=model_type, input_value=None, input_type=NoneType]
+    For further information visit https://errors.pydantic.dev/2.11/v/model_type
+2025-08-19 12:25:49,075 - WARNING - Text truncated due to length
+2025-08-19 12:26:24,183 - WARNING - Text truncated due to length
+2025-08-19 12:26:53,479 - WARNING - Text truncated due to length
+2025-08-19 12:27:27,013 - WARNING - Text truncated due to length
+2025-08-19 12:27:32,083 - WARNING - Text truncated due to length
+2025-08-19 12:27:33,343 - WARNING - Text truncated due to length
+2025-08-19 12:27:49,363 - WARNING - Server error 500, retrying in 1.0s...
+2025-08-19 12:27:51,901 - WARNING - Text truncated due to length
+2025-08-19 12:28:05,369 - WARNING - Text truncated due to length
+2025-08-19 12:28:05,825 - WARNING - Text truncated due to length
+2025-08-19 12:28:24,885 - WARNING - Server error 500, retrying in 2.0s...
+2025-08-19 12:28:41,456 - ERROR - Evaluation failed for be3c1: Validation error (400): Validation error: 1 validation error for EvaluationResponse
+data
+  Input should be a valid dictionary or instance of SimilarQuestionsEvaluation [type=model_type, input_value=None, input_type=NoneType]
+    For further information visit https://errors.pydantic.dev/2.11/v/model_type
+2025-08-19 12:28:46,290 - ERROR - Evaluation failed for ac6e9: Validation error (400): Validation error: 1 validation error for EvaluationResponse
+data
+  Input should be a valid dictionary or instance of SimilarQuestionsEvaluation [type=model_type, input_value=None, input_type=NoneType]
+    For further information visit https://errors.pydantic.dev/2.11/v/model_type
+2025-08-19 12:29:06,472 - WARNING - Text truncated due to length
+2025-08-19 12:29:08,038 - WARNING - Text truncated due to length
+2025-08-19 12:29:16,852 - WARNING - Text truncated due to length
+2025-08-19 12:29:21,183 - WARNING - Text truncated due to length
+2025-08-19 12:29:27,945 - WARNING - Text truncated due to length
+2025-08-19 12:30:38,098 - WARNING - Text truncated due to length
+2025-08-19 12:30:39,088 - WARNING - Connection pool is full, discarding connection: localhost. Connection pool size: 10
+2025-08-19 12:30:41,437 - WARNING - Connection pool is full, discarding connection: localhost. Connection pool size: 10
+2025-08-19 12:30:41,579 - WARNING - Connection pool is full, discarding connection: localhost. Connection pool size: 10
+2025-08-19 12:30:41,717 - WARNING - Connection pool is full, discarding connection: localhost. Connection pool size: 10
+2025-08-19 12:30:43,223 - WARNING - Connection pool is full, discarding connection: localhost. Connection pool size: 10
+2025-08-19 12:30:43,987 - WARNING - Connection pool is full, discarding connection: localhost. Connection pool size: 10
+2025-08-19 12:30:44,427 - WARNING - Connection pool is full, discarding connection: localhost. Connection pool size: 10
+2025-08-19 12:30:44,696 - WARNING - Connection pool is full, discarding connection: localhost. Connection pool size: 10
+2025-08-19 12:30:45,491 - WARNING - Connection pool is full, discarding connection: localhost. Connection pool size: 10
+2025-08-19 12:30:46,170 - WARNING - Connection pool is full, discarding connection: localhost. Connection pool size: 10
+2025-08-19 12:30:46,173 - INFO - Similar questions evaluation completed! Results saved to evals/similar_questions_evaluation_results.csv
