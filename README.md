@@ -1,4 +1,4 @@
-# Similar Questions Evaluation Framework
+# Similar Questions Relevance Evaluation Framework
 
 This repository contains APIs, evaluation scripts and evaluation results for the following 
 - Evaluation of the relevance of similar questions 
