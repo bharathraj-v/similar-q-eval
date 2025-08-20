@@ -1,11 +1,10 @@
 # Similar Questions Relevance Evaluation Framework
 
-This repository contains APIs, evaluation scripts and evaluation results for the following 
+This repository contains APIs, evaluation scripts and evaluation results for the following: 
 - Evaluation of the relevance of similar questions 
 - Solution Builder for solving academic problems with param to substantiate answer with it's similar questions
 - Evaluation scripts to test the Similar questions Evaluation API and Solution Builder API with the test dataset
-- Solution Builders comparision and evaluation - LLM-as-a-Judge
-
+- Solution Builders comparision and evaluation - **LLM-as-a-Judge**
 
 # Repository Index
 ### Tree
