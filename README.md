@@ -89,7 +89,7 @@ pip install -r requirements.txt
 
 **Usage:**
 
-###1. Solution Builder API (integrated)
+### 1. Solution Builder API (integrated)
 
 Run the server via
 ```
