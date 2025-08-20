@@ -7,37 +7,75 @@ This repository contains APIs, evaluation scripts and evaluation results for the
 - Solution comparision and evaluation
 
 
-Repository Index
-
+# Repository Index
+### Tree
+```
 ├── configs
-│   ├── comparitive_analysis_prompts_mas.yaml - Prompts for comparitive analysis of solutions via a multi-agent system
-│   ├── comparitive_analysis_prompts.yaml - Prompts for comparitive analysis of solutions via a single agent system
-│   ├── evaluation_prompts_mas.yaml - Prompts for evaluation of similar questions via a multi-agent system
-│   ├── evaluation_prompts_s.yaml - Prompts for evaluation of similar questions via a single agent system
-│   ├── solution_builder_prompts_sim.yaml - Prompts for solution builder with similar questions via a single agent system
-│   └── solution_builder_prompts.yaml - Prompts for solution builder without similar questions via a single agent system
+│   ├── comparitive_analysis_prompts_mas.yaml
+│   ├── comparitive_analysis_prompts.yaml
+│   ├── evaluation_prompts_mas.yaml
+│   ├── evaluation_prompts_s.yaml
+│   ├── solution_builder_prompts_sim.yaml
+│   └── solution_builder_prompts.yaml
 ├── eval_data_exploration.ipynb
 ├── evals
-│   ├── evaluation.log
-│   ├── evaluation_results.csv - Solution comparision results for the test dataset (without MAS)
-│   ├── evaluation_results_sample.csv 
-│   ├── similar_questions_evaluation.log
-│   └── similar_questions_evaluation_results.csv - Solution comparision results for the test dataset (without MAS)
-├── main_logic.ipynb - Notebook where most of the logic was workshopped before implementing as APIs
+│   ├── evaluation.log
+│   ├── evaluation_results.csv
+│   ├── evaluation_results_sample.csv
+│   ├── similar_questions_evaluation.log
+│   └── similar_questions_evaluation_results.csv
+├── main_logic.ipynb
 ├── README.md
 ├── requirements.txt
 ├── scripts
-│   ├── evaluate_similar_questions.py - Script for executing similar questions evaluation API on the test dataset
-│   └── evaluate_solution_builders.py - Script for executing solution builder API on the test dataset
+│   ├── evaluate_similar_questions.py
+│   └── evaluate_solution_builders.py
 ├── servers
-│   ├── compare_answers_mas.py - API for comparing solutions generated with and without similar questions via a multi-agent system
-│   ├── compare_answers.py - API for comparing solutions generated with and without similar questions via a single agent system
-│   ├── evaluate_similar_question_mas.py - API for evaluating similar questions via a multi-agent system
-│   ├── evaluate_similar_question.py - API for evaluating similar questions via a single agent system
-│   ├── solution_builder_no_sim.py - API for solution builder without similar questions 
-│   ├── solution_builder.py - an integrated API for solution builder with and without similar questions based on param
-│   └── solution_builder_with_sim.py - API for solution builder with similar questions
+│   ├── compare_answers_mas.py
+│   ├── compare_answers.py
+│   ├── evaluate_similar_question_mas.py
+│   ├── evaluate_similar_question.py
+│   ├── solution_builder_no_sim.py
+│   ├── solution_builder.py
+│   └── solution_builder_with_sim.py
 └── similar_question_data.json
+```
+
+### Details
+
+- **configs/**
+  - `comparitive_analysis_prompts_mas.yaml` – Prompts for comparative analysis via a multi-agent system  
+  - `comparitive_analysis_prompts.yaml` – Prompts for comparative analysis via a single agent system  
+  - `evaluation_prompts_mas.yaml` – Prompts for evaluating similar questions via a multi-agent system  
+  - `evaluation_prompts_s.yaml` – Prompts for evaluating similar questions via a single agent system  
+  - `solution_builder_prompts_sim.yaml` – Prompts for solution builder with similar questions (single agent)  
+  - `solution_builder_prompts.yaml` – Prompts for solution builder without similar questions (single agent)  
+
+- **eval_data_exploration.ipynb** – Notebook for dataset exploration  
+
+- **evals/**
+  - `evaluation.log` – Logs of evaluation runs  
+  - `evaluation_results.csv` – Solution comparison results (without MAS)  
+  - `evaluation_results_sample.csv` – Sample results  
+  - `similar_questions_evaluation.log` – Logs for similar questions evaluation  
+  - `similar_questions_evaluation_results.csv` – Similar questions evaluation results (without MAS)  
+
+- **main_logic.ipynb** – Notebook where core logic was first prototyped  
+
+- **scripts/**
+  - `evaluate_similar_questions.py` – Runs similar questions evaluation API on dataset  
+  - `evaluate_solution_builders.py` – Runs solution builder evaluation on dataset  
+
+- **servers/**
+  - `compare_answers_mas.py` – Compare solutions with/without similar questions (MAS)  
+  - `compare_answers.py` – Compare solutions with/without similar questions (single agent)  
+  - `evaluate_similar_question_mas.py` – Evaluate similar questions via MAS  
+  - `evaluate_similar_question.py` – Evaluate similar questions (single agent)  
+  - `solution_builder_no_sim.py` – Solution builder without similar questions  
+  - `solution_builder.py` – Integrated solution builder (param-based)  
+  - `solution_builder_with_sim.py` – Solution builder with similar questions  
+
+- **similar_question_data.json** – Dataset of similar questions  
 
 
 ## Installation and usage
@@ -62,7 +100,8 @@ PORT=8000 python servers/solution_builder.py
 
 Server Usage
 
-python```
+
+```
 import requests
 
 BASE_URL = "http://localhost:8000"
@@ -106,7 +145,7 @@ PORT=8001 python servers/evaluate_similar_question.py
 
 Server Usage
 
-python```
+```
 import requests
 
 BASE_URL = "http://localhost:8001"
@@ -155,7 +194,7 @@ python scripts/evaluate_solution_builders.py
 
 Findings:
 
-- The similarity evaluation scores are not correlated with the solution builder scores meaning the LLM with reasoning is able to ignore the irrelevant similar questions
+- The similarity evaluation scores are not correlated with the solution builder scores, meaning the solution builder with similar questions is able to ignore the irrelevant similar questions
 
 
 ## To-do
