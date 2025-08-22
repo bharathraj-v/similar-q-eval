@@ -126,30 +126,36 @@ def validate_environment():
     if not api_key:
         error_msg = config_data['messages']['errors']['missing_api_key']
         raise ValueError(error_msg)
-    return api_key
+    
+    api_key2 = os.getenv("GEMINI_API_KEY_2")
+    if not api_key2:
+        error_msg = config_data['messages']['errors']['missing_api_key']
+    return api_key, api_key2
 
 def initialize_llms():
     """Initialize LLM instances"""
     global sub_agent_llm, orchestrator_llm
     
     try:
-        api_key = validate_environment()
+        api_key, api_key2 = validate_environment()
         
-        config = types.GenerateContentConfig(
-            max_output_tokens=8192,
-            thinking_config=types.ThinkingConfig(thinking_budget=0)  
-        )
         
         sub_agent_llm = GoogleGenAI(
             model="gemini-2.5-flash",
             api_key=api_key,
-            generation_config=config,
+            generation_config=types.GenerateContentConfig(
+            max_output_tokens=1000,
+            thinking_config=types.ThinkingConfig(thinking_budget=0)  
+        ),
         )
         
         orchestrator_llm = GoogleGenAI(
             model="gemini-2.5-flash", 
             api_key=api_key,
-            generation_config=config,
+            generation_config=types.GenerateContentConfig(
+            max_output_tokens=4000,
+            thinking_config=types.ThinkingConfig(thinking_budget=0)  
+        ),
         )
         
         logger.info(config_data['messages']['startup']['llm_init'])
@@ -178,7 +184,7 @@ def initialize_agents():
 
         structural_similarity_agent = FunctionAgent(
             system_prompt=agents_config['structural_similarity']['system_prompt'],
-            llm=sub_agent_llm,
+            llm=orchestrator_llm,
             tools=[],
             output_cls=StructuralSimilarity,
         )

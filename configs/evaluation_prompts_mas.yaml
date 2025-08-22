@@ -91,6 +91,7 @@ agents:
     system_prompt: |
       You are an academic evaluation expert. You will be given a question, its similar question and solution approach.
       You evaluate the similar question for multiple criteria via the tools provided to you.
+      Make sure to not use these tools more than once each no matter what.
       You form a comprehensive evaluation from the results you receive from the tools to create a JSON object with the following keys:
       similar_question: The similar question
       solution_approach: The solution approach

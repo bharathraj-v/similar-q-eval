@@ -4,7 +4,6 @@ import csv
 import logging
 import time
 import requests
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,16 +41,16 @@ class SimilarQuestionEvaluationResult:
     error: Optional[str] = None
     timestamp: str = ""
 
-class SimilarQuestionsEvaluationRunner:
+class RateLimitedSimilarQuestionsEvaluationRunner:
     def __init__(self, 
                  evaluation_api_url: str = "http://localhost:8000",
                  output_file: str = "evals/similar_questions_evaluation_results.csv",
-                 max_workers: int = 2,
+                 request_delay: float = 30.0,  # 30 seconds between requests
                  max_retries: int = 3,
                  retry_delay: float = 1.0):
         self.evaluation_api_url = evaluation_api_url.rstrip('/')
         self.output_file = output_file
-        self.max_workers = max_workers
+        self.request_delay = request_delay
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.processed_pairs = set()
@@ -180,6 +179,15 @@ class SimilarQuestionsEvaluationRunner:
                     except:
                         error_detail = response.text[:200]
                     raise ValueError(f"Validation error (400): {error_detail}")
+                elif response.status_code == 429:
+                    # Rate limit hit - wait longer and retry
+                    if attempt < self.max_retries - 1:
+                        wait_time = self.request_delay * 2  # Double the normal delay for rate limits
+                        logger.warning(f"Rate limit hit (429), waiting {wait_time}s before retry...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        raise requests.exceptions.HTTPError(f"Rate limit exceeded after {self.max_retries} attempts")
                 elif response.status_code in [500, 502, 503, 504]:
                     # Server errors - retry
                     if attempt < self.max_retries - 1:
@@ -319,12 +327,12 @@ class SimilarQuestionsEvaluationRunner:
         return pairs
 
     def run_evaluation(self, data_file: str = 'similar_question_data.json'):
-        """Run evaluation on all question-similar_question pairs"""
+        """Run evaluation on all question-similar_question pairs with rate limiting"""
         
         # Load data
         try:
             with open(data_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)[:10]
+                data = json.load(f)[:100]
             logger.info(f"Loaded {len(data)} questions from {data_file}")
         except Exception as e:
             logger.error(f"Failed to load data file: {e}")
@@ -346,58 +354,82 @@ class SimilarQuestionsEvaluationRunner:
         
         logger.info(f"Generated {total_pairs} question-similar_question pairs to evaluate")
         logger.info(f"Skipping {len(self.processed_pairs)} already processed pairs")
+        logger.info(f"Processing requests with {self.request_delay}s delay between each request")
 
         if not question_pairs:
             logger.info("All question pairs have already been processed!")
             return
 
-        # Process pairs concurrently
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            # Submit all tasks
-            future_to_pair = {
-                executor.submit(self._process_similar_question_pair, question_data, similar_q): 
-                f"{question_data['question_id']}_{hash(similar_q['similar_question_text'])}"
-                for question_data, similar_q in question_pairs
-            }
-            
-            # Process completed tasks with progress bar
-            with tqdm(total=len(question_pairs), desc="Evaluating similar questions") as pbar:
-                for future in as_completed(future_to_pair):
-                    pair_id = future_to_pair[future]
-                    try:
-                        result = future.result()
-                        self._save_result(result)
-                        self.processed_pairs.add(pair_id)
-                        
-                        # Update progress bar description with latest result
-                        if result.total_score is not None:
-                            pbar.set_postfix({
-                                'ID': result.question_id[:6],
-                                'Total': result.total_score,
-                                'Concept': result.conceptual_similarity_score or 0
-                            })
-                        else:
-                            pbar.set_postfix({'ID': result.question_id[:6], 'Status': 'Error'})
-                            
-                    except Exception as e:
-                        question_id = pair_id.split('_')[0] if '_' in pair_id else 'unknown'
-                        logger.error(f"Failed to process pair {pair_id}: {e}")
-                        
-                        # Save error result
-                        error_result = SimilarQuestionEvaluationResult(
-                            question_id=question_id,
-                            original_question="Error loading question",
-                            subject="Unknown",
-                            similar_question_text="Error loading similar question",
-                            original_similarity_score=0.0,
-                            summarized_solution_approach="Error loading approach",
-                            error=f"Processing failed: {str(e)}"
-                        )
-                        self._save_result(error_result)
+        # Process pairs sequentially with delay
+        successful_count = 0
+        error_count = 0
+        
+        with tqdm(total=len(question_pairs), desc="Evaluating similar questions") as pbar:
+            for i, (question_data, similar_q) in enumerate(question_pairs):
+                pair_id = f"{question_data['question_id']}_{hash(similar_q['similar_question_text'])}"
+                
+                try:
+                    # Process the pair
+                    result = self._process_similar_question_pair(question_data, similar_q)
+                    self._save_result(result)
+                    self.processed_pairs.add(pair_id)
                     
-                    pbar.update(1)
+                    if result.total_score is not None:
+                        successful_count += 1
+                        pbar.set_postfix({
+                            'ID': result.question_id[:8],
+                            'Total': result.total_score,
+                            'Concept': result.conceptual_similarity_score or 0,
+                            'Success': successful_count,
+                            'Errors': error_count
+                        })
+                    else:
+                        error_count += 1
+                        pbar.set_postfix({
+                            'ID': result.question_id[:8], 
+                            'Status': 'Error',
+                            'Success': successful_count,
+                            'Errors': error_count
+                        })
+                        
+                except Exception as e:
+                    error_count += 1
+                    question_id = question_data.get('question_id', 'unknown')
+                    logger.error(f"Failed to process pair {pair_id}: {e}")
+                    
+                    # Save error result
+                    error_result = SimilarQuestionEvaluationResult(
+                        question_id=question_id,
+                        original_question=question_data.get('question_text', 'Error loading question'),
+                        subject=question_data.get('subject', 'Unknown'),
+                        similar_question_text=similar_q.get('similar_question_text', 'Error loading similar question'),
+                        original_similarity_score=similar_q.get('similarity_score', 0.0),
+                        summarized_solution_approach=similar_q.get('summarized_solution_approach', 'Error loading approach'),
+                        error=f"Processing failed: {str(e)}"
+                    )
+                    self._save_result(error_result)
+                    
+                    pbar.set_postfix({
+                        'ID': question_id[:8], 
+                        'Status': 'Error',
+                        'Success': successful_count,
+                        'Errors': error_count
+                    })
+                
+                pbar.update(1)
+                
+                # Wait before next request (except for the last one)
+                if i < len(question_pairs) - 1:
+                    logger.info(f"Waiting {self.request_delay}s before next request...")
+                    
+                    # Show countdown in progress bar
+                    for remaining in range(int(self.request_delay), 0, -1):
+                        pbar.set_description(f"Waiting {remaining}s")
+                        time.sleep(1)
+                    pbar.set_description("Evaluating similar questions")
 
         logger.info(f"Similar questions evaluation completed! Results saved to {self.output_file}")
+        logger.info(f"Final stats - Successful: {successful_count}, Errors: {error_count}")
         self._print_summary()
 
     def _print_summary(self):
@@ -456,50 +488,51 @@ def main():
     # Configuration
     EVALUATION_API_URL = "http://localhost:8000"  # Your similar questions evaluation API
     OUTPUT_FILE = "evals/similar_questions_evaluation_results_mas.csv"
-    MAX_WORKERS = 1  # Reduced to avoid overwhelming API
-    
+    REQUEST_DELAY = 30.0  #
     # Test API connectivity
-    try:
-        session = requests.Session()
-        health_check = session.get(f"{EVALUATION_API_URL}/health", timeout=10)
+    # try:
+    #     session = requests.Session()
+    #     health_check = session.get(f"{EVALUATION_API_URL}/health", timeout=10)
         
-        if health_check.status_code != 200:
-            raise Exception(f"Evaluation API not healthy: {health_check.status_code}")
+    #     if health_check.status_code != 200:
+    #         raise Exception(f"Evaluation API not healthy: {health_check.status_code}")
             
-        logger.info("Evaluation API is healthy and ready")
+    #     logger.info("Evaluation API is healthy and ready")
         
-        # Also test the /evaluate endpoint with a simple request
-        try:
-            test_response = session.post(
-                f"{EVALUATION_API_URL}/evaluate",
-                json={
-                    "question_text": "What is 2+2?",
-                    "similar_question": "What is 3+3?", 
-                    "summarized_solution_approach": "Simple addition"
-                },
-                timeout=30
-            )
-            if test_response.status_code == 200:
-                logger.info("Evaluation endpoint test successful")
-            else:
-                logger.warning(f"Evaluation endpoint test returned {test_response.status_code}")
-        except Exception as e:
-            logger.warning(f"Evaluation endpoint test failed: {e}")
+    #     try:
+    #         test_response = session.post(
+    #             f"{EVALUATION_API_URL}/evaluate",
+    #             json={
+    #                 "question_text": "What is 2+2?",
+    #                 "similar_question": "What is 3+3?", 
+    #                 "summarized_solution_approach": "Simple addition"
+    #             },
+    #             timeout=30
+    #         )
+    #         if test_response.status_code == 200:
+    #             logger.info("Evaluation endpoint test successful")
+    #         elif test_response.status_code == 429:
+    #             logger.warning("Rate limit detected during test - this is expected")
+    #         else:
+    #             logger.warning(f"Evaluation endpoint test returned {test_response.status_code}")
+    #     except Exception as e:
+    #         logger.warning(f"Evaluation endpoint test failed: {e}")
         
-    except Exception as e:
-        logger.error(f"API connectivity check failed: {e}")
-        return
+    # except Exception as e:
+    #     logger.error(f"API connectivity check failed: {e}")
+    #     return
 
     # Run evaluation
-    runner = SimilarQuestionsEvaluationRunner(
+    runner = RateLimitedSimilarQuestionsEvaluationRunner(
         evaluation_api_url=EVALUATION_API_URL,
         output_file=OUTPUT_FILE,
-        max_workers=MAX_WORKERS,
+        request_delay=REQUEST_DELAY,
         max_retries=1,
-        retry_delay=1.0
+        retry_delay=2.0
     )
     
     try:
+        logger.info(f"Starting rate-limited evaluation with {REQUEST_DELAY}s delays between requests")
         runner.run_evaluation()
     except KeyboardInterrupt:
         logger.info("Evaluation interrupted by user. Progress has been saved.")

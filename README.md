@@ -225,17 +225,38 @@ python scripts/evaluate_solution_builders.py
 | Similarity vs. Solution Builder (no sim) | **0.03** |
 | Similarity vs. Solution Builder (with sim) | **0.05** |
 
+
+With a 75 question sample for MAS
+
+| Metric | Avg. Score |
+|--------|-------|
+| Similar Questions Evaluation without MAS | **59 / 100** |
+| Similar Questions Evaluation without MAS | **60 / 100** |
+
+**Correlations:**
+
+For 75 question sample
+
+| Correlation Pair | Value |
+|------------------|-------|
+| Similarity Evaluation w/o MAS vs. Similarity Evaluation with MAS | **0.91** |
+| Similarity vs. Solution Builder (no sim) | **-0.05** |
+| Similarity vs. Solution Builder (sim) | **-0.08** |
+| Similarity MAS vs. Solution Builder (no sim) | **0.06** |
+| Similarity MAS vs. Solution Builder ( sim) | **-0.11** |
+
+
+
+
 **Findings:**
 
 - The similarity evaluation scores are not correlated with the solution builder scores, meaning the solution builder with similar questions is able to ignore the irrelevant similar questions
+- The MAS and no MAS similarity evaluation scores are highly correlated with each other with 91% correlation
 
 
 
 **To Note**
 - The similar questions are currently only being fetched from the dataset. Current API has modularity in regards to changing the similar question fetching logic with vector search.
-- Both solution builders have been evaluated with thinking budget set to -1 (unlimited), evaluration results may vary with no thinking.
+- Both solution builders have been evaluated with thinking budget set to -1 (unlimited), evaluation results may vary with no thinking.
 
 
-## To-do
-
-- [ ] Evaluate with MAS servers and check if findings correlate
